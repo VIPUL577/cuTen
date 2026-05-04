@@ -6,7 +6,7 @@
 
 namespace seera_cuda
 {
-__global__ void _cuda_relu_fwd(const float* x, float* out, float* grad, int size) {
+__global__ void _cuda_relu (const float* x, float* out, float* grad, int size) {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
         float val = x[i];
         out[i]  = val > 0.0f ? val : 0.0f;
@@ -14,7 +14,7 @@ __global__ void _cuda_relu_fwd(const float* x, float* out, float* grad, int size
     }
 }
 
-__global__ void _cuda_sigmoid_fwd(const float* x, float* out, float* grad, int size) {
+__global__ void _cuda_sigmoid (const float* x, float* out, float* grad, int size) {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
         float val = x[i];
         float s = 1.0f / (1.0f + expf(-val));
@@ -23,7 +23,7 @@ __global__ void _cuda_sigmoid_fwd(const float* x, float* out, float* grad, int s
     }
 }
 
-__global__ void _cuda_tanh_fwd(const float* x, float* out, float* grad, int size) {
+__global__ void _cuda_tanh (const float* x, float* out, float* grad, int size) {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
         float val = x[i];
         float t = tanhf(val);
@@ -32,7 +32,7 @@ __global__ void _cuda_tanh_fwd(const float* x, float* out, float* grad, int size
     }
 }
 
-__global__ void _cuda_log_fwd(const float* x, float* out, float* grad, int size) {
+__global__ void _cuda_log (const float* x, float* out, float* grad, int size) {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
         float val = x[i];
         out[i]  = logf(val);
@@ -40,7 +40,7 @@ __global__ void _cuda_log_fwd(const float* x, float* out, float* grad, int size)
     }
 }
 
-__global__ void _cuda_exp_fwd(const float* x, float* out, float* grad, int size) {
+__global__ void _cuda_exp (const float* x, float* out, float* grad, int size) {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
         float val = x[i];
         float e = expf(val);
@@ -49,7 +49,7 @@ __global__ void _cuda_exp_fwd(const float* x, float* out, float* grad, int size)
     }
 }
 
-__global__ void _cuda_abs_fwd(const float* x, float* out, float* grad, int size) {
+__global__ void _cuda_abs (const float* x, float* out, float* grad, int size) {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
         float val = x[i];
         out[i]  = fabsf(val);
@@ -57,7 +57,7 @@ __global__ void _cuda_abs_fwd(const float* x, float* out, float* grad, int size)
     }
 }
 
-__global__ void _cuda_sqrt_fwd(const float* x, float* out, float* grad, int size) {
+__global__ void _cuda_sqrt (const float* x, float* out, float* grad, int size) {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
         float val = x[i];
         float s = sqrtf(val);
@@ -66,7 +66,7 @@ __global__ void _cuda_sqrt_fwd(const float* x, float* out, float* grad, int size
     }
 }
 
-__global__ void _cuda_pow_fwd(const float* x, float exponent, float* out, float* grad, int size) {
+__global__ void _cuda_pow (const float* x, float exponent, float* out, float* grad, int size) {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
         float val = x[i];
         out[i]  = powf(val, exponent);
@@ -74,7 +74,7 @@ __global__ void _cuda_pow_fwd(const float* x, float exponent, float* out, float*
     }
 }
 
-__global__ void _cuda_clip_fwd(const float* x, float lo, float hi, float* out, float* grad, int size) {
+__global__ void _cuda_clip (const float* x, float lo, float hi, float* out, float* grad, int size) {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
         float val = x[i];
         out[i]  = fminf(fmaxf(val, lo), hi);
@@ -84,7 +84,7 @@ __global__ void _cuda_clip_fwd(const float* x, float lo, float hi, float* out, f
 
 
 
-__global__ void _cuda_softmax_fwd(const float* x, float* out, int N, int C) {
+__global__ void _cuda_softmax (const float* x, float* out, int N, int C) {
     extern __shared__ float smem[]; // Size: blockDim.x
     int row = blockIdx.x;
     if (row >= N) return;
@@ -161,46 +161,46 @@ inline int get_blocks(int size) {
     return (size + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
 }
 
-void cuda_relu_fwd(const float* x, float* out, float* grad, int size) {
-    _cuda_relu_fwd<<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
+void cuda_relu (const float* x, float* out, float* grad, int size) {
+    _cuda_relu <<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
 }
 
-void cuda_sigmoid_fwd(const float* x, float* out, float* grad, int size) {
-    _cuda_sigmoid_fwd<<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
+void cuda_sigmoid (const float* x, float* out, float* grad, int size) {
+    _cuda_sigmoid <<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
 }
 
-void cuda_tanh_fwd(const float* x, float* out, float* grad, int size) {
-    _cuda_tanh_fwd<<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
+void cuda_tanh (const float* x, float* out, float* grad, int size) {
+    _cuda_tanh <<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
 }
 
-void cuda_log_fwd(const float* x, float* out, float* grad, int size) {
-    _cuda_log_fwd<<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
+void cuda_log (const float* x, float* out, float* grad, int size) {
+    _cuda_log <<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
 }
 
-void cuda_exp_fwd(const float* x, float* out, float* grad, int size) {
-    _cuda_exp_fwd<<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
+void cuda_exp (const float* x, float* out, float* grad, int size) {
+    _cuda_exp <<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
 }
 
-void cuda_abs_fwd(const float* x, float* out, float* grad, int size) {
-    _cuda_abs_fwd<<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
+void cuda_abs (const float* x, float* out, float* grad, int size) {
+    _cuda_abs <<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
 }
 
-void cuda_sqrt_fwd(const float* x, float* out, float* grad, int size) {
-    _cuda_sqrt_fwd<<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
+void cuda_sqrt (const float* x, float* out, float* grad, int size) {
+    _cuda_sqrt <<<get_blocks(size), THREADS_PER_BLOCK>>>(x, out, grad, size);
 }
 
-void cuda_pow_fwd(const float* x, float exponent, float* out, float* grad, int size) {
-    _cuda_pow_fwd<<<get_blocks(size), THREADS_PER_BLOCK>>>(x, exponent, out, grad, size);
+void cuda_pow (const float* x, float exponent, float* out, float* grad, int size) {
+    _cuda_pow <<<get_blocks(size), THREADS_PER_BLOCK>>>(x, exponent, out, grad, size);
 }
 
-void cuda_clip_fwd(const float* x, float lo, float hi, float* out, float* grad, int size) {
-    _cuda_clip_fwd<<<get_blocks(size), THREADS_PER_BLOCK>>>(x, lo, hi, out, grad, size);
+void cuda_clip (const float* x, float lo, float hi, float* out, float* grad, int size) {
+    _cuda_clip <<<get_blocks(size), THREADS_PER_BLOCK>>>(x, lo, hi, out, grad, size);
 }
 
 
-void cuda_softmax_fwd(const float* x, float* out, int N, int C) {
+void cuda_softmax (const float* x, float* out, int N, int C) {
     int shared_mem_bytes = THREADS_PER_BLOCK * sizeof(float);
-    _cuda_softmax_fwd<<<N, THREADS_PER_BLOCK, shared_mem_bytes>>>(x, out, N, C);
+    _cuda_softmax <<<N, THREADS_PER_BLOCK, shared_mem_bytes>>>(x, out, N, C);
 }
 
 void cuda_softmax_vjp(const float* s, const float* dout, float* dx, int N, int C) {

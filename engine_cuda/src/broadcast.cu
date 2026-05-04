@@ -5,9 +5,7 @@
 
 #define BLOCK_SIZE 256
 
-/* ─────────────────────────────────────────────────────────────
-   Kernel
-   ───────────────────────────────────────────────────────────── */
+
 namespace seera_cuda{
 __global__ void broadcast_kernel_4d(
     const float*  A,
@@ -26,32 +24,27 @@ __global__ void broadcast_kernel_4d(
     long long tid = (long long)blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= total) return;
 
-    // Decode tid → (n, c, h, w)
     int w = tid % W;
     int h = (tid / W) % H;
     int c = (tid / (W * H)) % Cc;
     int n = tid / (W * H * Cc);
 
-    // Broadcast mapping for A
     int an = (aN == 1) ? 0 : n;
     int ac = (aC == 1) ? 0 : c;
     int ah = (aH == 1) ? 0 : h;
     int aw = (aW == 1) ? 0 : w;
 
-    // Broadcast mapping for B
     int bn = (bN == 1) ? 0 : n;
     int bc = (bC == 1) ? 0 : c;
     int bh = (bH == 1) ? 0 : h;
     int bw = (bW == 1) ? 0 : w;
 
-    // Flatten index for A
     long long a_idx =
         ((long long)an * aC * aH * aW) +
         ((long long)ac * aH * aW) +
         ((long long)ah * aW) +
         aw;
 
-    // Flatten index for B
     long long b_idx =
         ((long long)bn * bC * bH * bW) +
         ((long long)bc * bH * bW) +
@@ -64,9 +57,7 @@ __global__ void broadcast_kernel_4d(
     C[tid] = (op == 0) ? (av + bv) : (av * bv);
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Host: Compute output shape
-   ───────────────────────────────────────────────────────────── */
+
 
 static bool compute_out_shape_4d(
     int aN, int aC, int aH, int aW,
@@ -88,9 +79,6 @@ static bool compute_out_shape_4d(
     return (oN != -1 && oC != -1 && oH != -1 && oW != -1);
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Main API
-   ───────────────────────────────────────────────────────────── */
 
 void broadcast_op_4d(
     const float* A, 
@@ -130,13 +118,7 @@ void broadcast_op_4d(
     cudaDeviceSynchronize(); // remove later for performance
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Convenience wrappers
-   ───────────────────────────────────────────────────────────── */
-/* ─────────────────────────────────────────────────────────────
-   Compute total output size (number of elements)
-   Returns -1 if shapes are incompatible for broadcasting.
-   ───────────────────────────────────────────────────────────── */
+
 void broadcast_add_4d(
     const float* A, const float* B, float* C,
     int aN, int aC, int aH, int aW,

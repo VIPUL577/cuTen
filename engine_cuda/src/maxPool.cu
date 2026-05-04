@@ -51,32 +51,9 @@ __global__ void maxPool(float *input_image, float *conv, int *mask, int C,
     conv[(batchN * C + ni) * H_out * W_out + h_out * W_out + w_out] = temp;
   }
 }
-__global__ void maxPool_bwd(float *dX, float *dout, int *mask, int C, int H,
-                            int W, int R, int S, int pad_h, int pad_w,
-                            int stride_h, int stride_w, int W_out, int H_out) {
-  int c = blockIdx.y;
-  int BatchN = blockIdx.z;
-  int index_ = blockIdx.x * blockDim.x + threadIdx.x;
 
-  int rs = R * S;
 
-  int h_out = index_ / W_out;
-  int w_out = index_ % W_out;
-  for (int ii = 0; ii < rs; ii++) {
-    int s = ii % S;
-    int r = ii / S;
-    int h_in = h_out * stride_h - pad_h + r;
-    int w_in = w_out * stride_w - pad_w + s;
-
-    if (h_in >= 0 && h_in < H && w_in >= 0 && w_in < W) {
-      int index = (BatchN * C + c) * H * W + h_in * W + w_in;
-      atomicAdd(&(dX[index]), dout[(BatchN * C + c) * H_out * W_out + index_] *
-                                  ((float)mask[index]));
-    }
-  }
-}
-
-void cuda_maxpool_fwd(float *image, float *out, int *mask, int batchN, int C,
+void cuda_maxpool(float *image, float *out, int *mask, int batchN, int C,
                       int H, int W, int R, int S, int pad_h, int pad_w,
                       int stride_h, int stride_w) {
   int H_out = (H + 2 * pad_h - R) / stride_h + 1;
@@ -101,30 +78,5 @@ void cuda_maxpool_fwd(float *image, float *out, int *mask, int batchN, int C,
   cudaDeviceSynchronize();
 }
 
-void cuda_maxpool_bwd(float *dout, // [N,C,H_out,W_out]
-                      int *mask,   // [N,C,H,W]
-                      float *dX,   // [N,C,H,W] (output)
-                      int batchN, int C, int H, int W, int R, int S, int pad_h,
-                      int pad_w, int stride_h, int stride_w) {
-  int H_out = (H + 2 * pad_h - R) / stride_h + 1;
-  int W_out = (W + 2 * pad_w - S) / stride_w + 1;
 
-  int input_elems = batchN * C * H * W;
-  int output_elems_wob = H_out * W_out;
-
-  // Assume dX already allocated
-  cudaMemset(dX, 0, sizeof(float) * input_elems);
-
-  int threads_per_block = 256;
-  int Nblock = (output_elems_wob + threads_per_block - 1) / threads_per_block;
-
-  // x = spatial, y = channels, z = batch
-  dim3 blocks(Nblock, C, batchN);
-
-  maxPool_bwd<<<blocks, threads_per_block>>>(dX, dout, mask, C, H, W, R, S,
-                                             pad_h, pad_w, stride_h, stride_w,
-                                             W_out, H_out);
-
-  cudaDeviceSynchronize();
-}
 } // namespace seera_cuda

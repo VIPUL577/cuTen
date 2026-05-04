@@ -39,9 +39,6 @@ namespace seera_cuda
             C[idx] = A[idx] * B[idx];
     }
 
-    // =======================
-    // Wrappers (NO kernel passing)
-    // =======================
 
     void cuda_elemadd_gputogpu(float *A, float *B, float *C, int size)
     {
@@ -79,46 +76,5 @@ namespace seera_cuda
         cudaDeviceSynchronize();
     }
 
-    // ======================== BACKWARD WRAPPERS ========================
-
-    // elemadd backward: dA = dC, dB = dC
-    //   void cuda_elemadd_bwd_gputogpu(float *dC, float *dA, float *dB, int N, int M,
-    //                                  int batchN)
-    //   {
-    //     dim3 block(32, 32);
-    //     dim3 grid((N + 31) / 32, (M + 31) / 32, batchN);
-    //     elemadd_bwd<<<grid, block>>>(dC, dA, dB, N, M);
-    //     cudaDeviceSynchronize();
-    //   }
-
-    //   // elemsub backward: dA = dC, dB = -dC
-    //   void cuda_elemsub_bwd_gputogpu(float *dC, float *dA, float *dB, int N, int M,
-    //                                  int batchN)
-    //   {
-    //     dim3 block(32, 32);
-    //     dim3 grid((N + 31) / 32, (M + 31) / 32, batchN);
-    //     elemsub_bwd<<<grid, block>>>(dC, dA, dB, N, M);
-    //     cudaDeviceSynchronize();
-    //   }
-
-    //   // elemmult backward: dA = dC * B, dB = dC * A  (requires saved fwd inputs)
-    //   void cuda_elemmult_bwd_gputogpu(float *dC, float *A, float *B, float *dA, float *dB,
-    //                                   int N, int M, int batchN)
-    //   {
-    //     dim3 block(32, 32);
-    //     dim3 grid((N + 31) / 32, (M + 31) / 32, batchN);
-    //     elemmult_bwd<<<grid, block>>>(dC, A, B, dA, dB, N, M);
-    //     cudaDeviceSynchronize();
-    //   }
-
-    //   // elemdiv backward: dA = dC / B, dB = -dC * A / (B^2)  (requires saved fwd inputs)
-    //   void cuda_elemdiv_bwd_gputogpu(float *dC, float *A, float *B, float *dA, float *dB,
-    //                                  int N, int M, int batchN)
-    //   {
-    //     dim3 block(32, 32);
-    //     dim3 grid((N + 31) / 32, (M + 31) / 32, batchN);
-    //     elemdiv_bwd<<<grid, block>>>(dC, A, B, dA, dB, N, M);
-    //     cudaDeviceSynchronize();
-    //   }
 
 } // namespace seera_cuda

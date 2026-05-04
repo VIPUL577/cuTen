@@ -10,7 +10,7 @@ namespace seera_cuda
 {
   using namespace nvcuda;
 
-   __global__ void matmul_wmma_bound(float *A, float *B, float *C, int M, int N,
+  __global__ void matmul_wmma_bound(float *A, float *B, float *C, int M, int N,
                                     int K)
   {
     int warpM = blockIdx.y * 16;
@@ -67,7 +67,6 @@ namespace seera_cuda
       __syncthreads();
     }
 
-    // 3. SAFE STORE
     __shared__ float shC[16 * 16];
     wmma::store_matrix_sync(shC, acc_frag, 16, wmma::mem_row_major);
     __syncthreads();
@@ -89,8 +88,6 @@ namespace seera_cuda
       }
     }
   }
-
-  // ======================== FORWARD WRAPPER ========================
 
   void cuda_matmul(float *hA, float *hB, float *hC, int M, int N, int K,
                    int Nbatch)
@@ -148,81 +145,7 @@ namespace seera_cuda
     transpose_3d_batch<<<grid, threads>>>(in, out, M, K, Nbatch);
     cudaDeviceSynchronize();
   }
- // ======================== BACKWARD WRAPPER ========================
 
-// Forward: C[batch x M x N] = A[batch x M x K] @ B[K x N]
-//   (kernel batches the first operand; B is shared across the batch)
-//
-// Backward:
-//   dA[batch x M x K] = dC[batch x M x N] @ B_T[N x K]
-//       → single batched kernel call (dC is the batched "A" operand,
-//         B_T is the shared non-batched "B" operand)
-//
-//   dB[K x N]         = sum_b( A_T_b[K x M] @ dC_b[M x N] )
-//       → per-batch kernel calls then accumulate into dB
-
-void cuda_matmul_bwd(float *A, float *B, float *dC, float *dA, float *dB,
-                     int M, int N, int K, int Nbatch)
-{
-  int threads = 256;
-
-  // --- Allocate temporaries ---
-  float *B_T;                                              // [N x K]        non-batched
-  float *A_T;                                              // [batch x K x M]
-  float *dB_temp;                                          // [K x N]        accumulation scratch
-  cudaMalloc(&B_T,     (size_t)N * K          * sizeof(float));
-  cudaMalloc(&A_T,     (size_t)Nbatch * K * M * sizeof(float));
-  cudaMalloc(&dB_temp, (size_t)K * N          * sizeof(float));
-
-  // --- 1. Transpose B (K x N) → B_T (N x K)  [non-batched] ---
-  int total_B = K * N;
-  transpose_2d<<<(total_B + threads - 1) / threads, threads>>>(B, B_T, K, N);
-
-  // --- 2. Transpose every batch slice of A: (Nbatch, M, K) → A_T (Nbatch, K, M) ---
-  cuda_transpose_3d(A, A_T, Nbatch, M, K);  // includes cudaDeviceSynchronize()
-
-  cudaDeviceSynchronize();  // ensure B_T is also ready
-
-  // --- 3. dA[batch x M x K] = dC[batch x M x N] @ B_T[N x K] ---
-  //    dC   → batched "A" operand  (grid.z = Nbatch)
-  //    B_T  → shared non-batched "B" operand
-  {
-    dim3 block(32);
-    dim3 grid((K + 15) / 16, (M + 15) / 16, Nbatch);
-    matmul_wmma_bound<<<grid, block>>>(dC, B_T, dA, M, K, N);
-    cudaDeviceSynchronize();
-  }
-
-  // --- 4. dB[K x N] = sum_b( A_T_b[K x M] @ dC_b[M x N] ) ---
-  //    Per-batch: A_T_b is the single-slice "A" (Nbatch=1 → batchno always 0),
-  //               dC_b  is the non-batched "B".
-  //    Accumulate each result into dB.
-  cudaMemset(dB, 0, (size_t)K * N * sizeof(float));
-  {
-    dim3 block(32);
-    dim3 grid((N + 15) / 16, (K + 15) / 16, 1);
-    int total_dB = K * N;
-
-    for (int b = 0; b < Nbatch; b++)
-    {
-      matmul_wmma_bound<<<grid, block>>>(
-          A_T + b * K * M,   // A_T_b as "A" (Nbatch=1) [K x M]
-          dC  + b * M * N,   // dC_b  as "B" (non-batched) [M x N]
-          dB_temp,           // result [K x N]
-          K, N, M);
-      cudaDeviceSynchronize();
-
-      elemwise_accumulate<<<(total_dB + threads - 1) / threads, threads>>>(
-          dB, dB_temp, total_dB);
-      cudaDeviceSynchronize();
-    }
-  }
-
-  // --- Cleanup ---
-  cudaFree(B_T);
-  cudaFree(A_T);
-  cudaFree(dB_temp);
-}
 
   // ======================== TRANSPOSE WRAPPER ========================
 
@@ -234,115 +157,113 @@ void cuda_matmul_bwd(float *A, float *B, float *dC, float *dA, float *dB,
     cudaDeviceSynchronize();
   }
 
-  // ======================== BATCHED 3-D TRANSPOSE ========================
-  // (Nbatch, M, K) → (Nbatch, K, M)
-  // Each thread transposes one element; blockIdx.z selects the batch slice.
+
 }
 // ======================== HELPER FUNCTIONS ========================
 
-void fill_rand_float(float *arr, int size) {
-    for (int i = 0; i < size; i++) {
-        // Generating numbers between 0.0 and 1.0
-        arr[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-    }
+void fill_rand_float(float *arr, int size)
+{
+  for (int i = 0; i < size; i++)
+  {
+    // Generating numbers between 0.0 and 1.0
+    arr[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+  }
 }
 
 // Helper function to print a matrix
-void print_matrix(const char* name, float* mat, int batch, int rows, int cols) {
-    printf("\n=== %s ===\n", name);
-    for (int b = 0; b < batch; b++) {
-        if (batch > 1) printf("Batch %d:\n", b);
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                // (batch * rows * cols) + (r * cols) + c
-                printf("%6.2f ", mat[(b * rows + r) * cols + c]);
-            }
-            printf("\n");
-        }
-        printf("\n");
+void print_matrix(const char *name, float *mat, int batch, int rows, int cols)
+{
+  printf("\n=== %s ===\n", name);
+  for (int b = 0; b < batch; b++)
+  {
+    if (batch > 1)
+      printf("Batch %d:\n", b);
+    for (int r = 0; r < rows; r++)
+    {
+      for (int c = 0; c < cols; c++)
+      {
+        // (batch * rows * cols) + (r * cols) + c
+        printf("%6.2f ", mat[(b * rows + r) * cols + c]);
+      }
+      printf("\n");
     }
+    printf("\n");
+  }
 }
 
 // ======================== MAIN TESTING FUNCTION ========================
 
-int main() {
-    // Seed random generation
-    srand(time(NULL));
+int main()
+{
+  // Seed random generation
+  srand(time(NULL));
 
-    // NOTE: Lowered dimensions here so the terminal doesn't get flooded. 
-    // Change these back to 64 when doing performance testing!
-    int M = 2;
-    int N = 2;
-    int K = 2;
-    int Nbatch = 3;
+  // NOTE: Lowered dimensions here so the terminal doesn't get flooded.
+  // Change these back to 64 when doing performance testing!
+  int M = 2;
+  int N = 2;
+  int K = 2;
+  int Nbatch = 3;
 
-    // Calculate sizes
-    int size_A  = Nbatch * M * K;
-    int size_B  = K * N;          // B is shared across batches
-    int size_C  = Nbatch * M * N;
+  // Calculate sizes
+  int size_A = Nbatch * M * K;
+  int size_B = K * N; // B is shared across batches
+  int size_C = Nbatch * M * N;
 
-    printf("Allocating memory for M=%d, N=%d, K=%d, Batch=%d...\n", M, N, K, Nbatch);
+  printf("Allocating memory for M=%d, N=%d, K=%d, Batch=%d...\n", M, N, K, Nbatch);
 
-    // Host memory allocation
-    float *h_A  = (float *)malloc(size_A * sizeof(float));
-    float *h_B  = (float *)malloc(size_B * sizeof(float));
-    float *h_C  = (float *)malloc(size_C * sizeof(float));
-    float *h_dC = (float *)malloc(size_C * sizeof(float));
-    float *h_dA = (float *)malloc(size_A * sizeof(float));
-    float *h_dB = (float *)malloc(size_B * sizeof(float));
+  // Host memory allocation
+  float *h_A = (float *)malloc(size_A * sizeof(float));
+  float *h_B = (float *)malloc(size_B * sizeof(float));
+  float *h_C = (float *)malloc(size_C * sizeof(float));
+  float *h_dC = (float *)malloc(size_C * sizeof(float));
+  float *h_dA = (float *)malloc(size_A * sizeof(float));
+  float *h_dB = (float *)malloc(size_B * sizeof(float));
 
-    // Initialize host data with random floats [0.0, 1.0]
-    fill_rand_float(h_A, size_A);
-    fill_rand_float(h_B, size_B);
-    fill_rand_float(h_dC, size_C);
+  // Initialize host data with random floats [0.0, 1.0]
+  fill_rand_float(h_A, size_A);
+  fill_rand_float(h_B, size_B);
+  fill_rand_float(h_dC, size_C);
 
-    // Device memory allocation
-    float *d_A, *d_B, *d_C, *d_dC, *d_dA, *d_dB;
-    cudaMalloc((void **)&d_A,  size_A * sizeof(float));
-    cudaMalloc((void **)&d_B,  size_B * sizeof(float));
-    cudaMalloc((void **)&d_C,  size_C * sizeof(float));
-    cudaMalloc((void **)&d_dC, size_C * sizeof(float));
-    cudaMalloc((void **)&d_dA, size_A * sizeof(float));
-    cudaMalloc((void **)&d_dB, size_B * sizeof(float));
+  // Device memory allocation
+  float *d_A, *d_B, *d_C, *d_dC, *d_dA, *d_dB;
+  cudaMalloc((void **)&d_A, size_A * sizeof(float));
+  cudaMalloc((void **)&d_B, size_B * sizeof(float));
+  cudaMalloc((void **)&d_C, size_C * sizeof(float));
+  cudaMalloc((void **)&d_dC, size_C * sizeof(float));
+  cudaMalloc((void **)&d_dA, size_A * sizeof(float));
+  cudaMalloc((void **)&d_dB, size_B * sizeof(float));
 
-    // Copy host data to device
-    cudaMemcpy(d_A, h_A, size_A * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_B, h_B, size_B * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_dC, h_dC, size_C * sizeof(float), cudaMemcpyHostToDevice);
+  // Copy host data to device
+  cudaMemcpy(d_A, h_A, size_A * sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_B, h_B, size_B * sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_dC, h_dC, size_C * sizeof(float), cudaMemcpyHostToDevice);
 
-    // Testing Forward Pass
-    printf("Running Forward Pass (Batched MatMul)...\n");
-    seera_cuda::cuda_matmul(d_A, d_B, d_C, M, N, K, Nbatch);
+  // Testing Forward Pass
+  printf("Running Forward Pass (Batched MatMul)...\n");
+  seera_cuda::cuda_matmul(d_A, d_B, d_C, M, N, K, Nbatch);
 
-    // Testing Backward Pass
-    printf("Running Backward Pass (Gradients)...\n");
-    seera_cuda::cuda_matmul_bwd(d_A, d_B, d_dC, d_dA, d_dB, M, N, K, Nbatch);
+  cudaMemcpy(h_C, d_C, size_C * sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(h_dA, d_dA, size_A * sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(h_dB, d_dB, size_B * sizeof(float), cudaMemcpyDeviceToHost);
 
-    // Copy results back to host for inspection
-    cudaMemcpy(h_C,  d_C,  size_C * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_dA, d_dA, size_A * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_dB, d_dB, size_B * sizeof(float), cudaMemcpyDeviceToHost);
+  print_matrix("Matrix A (Input)", h_A, Nbatch, M, K);
+  print_matrix("Matrix B (Input, shared across batches)", h_B, 1, K, N);
+  print_matrix("Matrix C (Forward Output)", h_C, Nbatch, M, N);
 
-    // --- PRINT THE MATRICES ---
-    print_matrix("Matrix A (Input)", h_A, Nbatch, M, K);
-    print_matrix("Matrix B (Input, shared across batches)", h_B, 1, K, N);
-    print_matrix("Matrix C (Forward Output)", h_C, Nbatch, M, N);
+  free(h_A);
+  free(h_B);
+  free(h_C);
+  free(h_dC);
+  free(h_dA);
+  free(h_dB);
 
-    // Free host memory
-    free(h_A);
-    free(h_B);
-    free(h_C);
-    free(h_dC);
-    free(h_dA);
-    free(h_dB);
+  cudaFree(d_A);
+  cudaFree(d_B);
+  cudaFree(d_C);
+  cudaFree(d_dC);
+  cudaFree(d_dA);
+  cudaFree(d_dB);
 
-    // Free device memory
-    cudaFree(d_A);
-    cudaFree(d_B);
-    cudaFree(d_C);
-    cudaFree(d_dC);
-    cudaFree(d_dA);
-    cudaFree(d_dB);
-
-    return 0;
+  return 0;
 }

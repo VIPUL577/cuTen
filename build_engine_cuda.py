@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Build the Seera CUDA engine shared library (seera_cuda)."""
 import subprocess
 import sysconfig
 import sys
@@ -20,7 +19,6 @@ def build():
     ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
     output = os.path.join(root, f"seera_cuda{ext_suffix}")
 
-    # ── Gather source files ──────────────────────────────────────────
     cu_files = [
         os.path.join(src_dir, f)
         for f in [
@@ -40,7 +38,6 @@ def build():
     ]
     bindings_cpp = os.path.join(src_dir, "cuda_bindings.cpp")
 
-    # ── Resolve pybind11 include ─────────────────────────────────────
     try:
         import pybind11
         pybind11_include = pybind11.get_include()
@@ -48,19 +45,16 @@ def build():
         print("✗ pybind11 not installed. Run: pip install pybind11")
         sys.exit(1)
 
-    # ── Detect CUDA toolkit ──────────────────────────────────────────
     nvcc = shutil.which("nvcc")
     if nvcc is None:
         print("✗ nvcc not found. Make sure the CUDA toolkit is installed and on PATH.")
         sys.exit(1)
 
-    # Infer CUDA home from nvcc location  (e.g. /usr/local/cuda/bin/nvcc)
     cuda_bin = os.path.dirname(os.path.realpath(nvcc))
     cuda_home = os.path.dirname(cuda_bin)
     cuda_include = os.path.join(cuda_home, "include")
     cuda_lib = os.path.join(cuda_home, "lib64")
 
-    # ── Temp dir for object files ────────────────────────────────────
     obj_dir = os.path.join(root, "_cuda_build_objs")
     os.makedirs(obj_dir, exist_ok=True)
 
@@ -69,7 +63,6 @@ def build():
         f"-I{cuda_include}",
     ]
 
-    # ── Step 1: compile each .cu → .o with nvcc ─────────────────────
     obj_files = []
     print("Compiling CUDA kernels …")
     for cu in cu_files:
@@ -93,7 +86,6 @@ def build():
             print(f"\n nvcc failed on {os.path.basename(cu)}:\n{result.stderr}")
             sys.exit(1)
 
-    # ── Step 2: compile cuda_bindings.cpp → .o with nvcc ─────────────
     bindings_obj = os.path.join(obj_dir, "cuda_bindings.o")
     obj_files.append(bindings_obj)
 
@@ -116,7 +108,6 @@ def build():
         print(f"\n✗ nvcc failed on cuda_bindings.cpp:\n{result.stderr}")
         sys.exit(1)
 
-    # ── Step 3: link all .o → shared library ─────────────────────────
     print("Linking …")
     cmd_link = [
         "nvcc",
@@ -133,13 +124,11 @@ def build():
         print(f"\n✗ Linking failed:\n{result.stderr}")
         sys.exit(1)
 
-    # ── Cleanup object files ─────────────────────────────────────────
     shutil.rmtree(obj_dir, ignore_errors=True)
 
     print(f"\n✓ Build successful: {output}")
     print(f"  Size: {os.path.getsize(output) / 1024:.0f} KB")
 
-    # ── Quick import test ────────────────────────────────────────────
     sys.path.insert(0, root)
     try:
         import importlib
